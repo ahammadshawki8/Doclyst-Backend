@@ -3,6 +3,22 @@ import requests
 from typing import Dict, Any
 from config import Config
 
+# Language configurations
+LANGUAGE_NAMES = {
+    'en': 'English',
+    'bn': 'Bengali (বাংলা)',
+    'zh': 'Chinese (中文)',
+    'hi': 'Hindi (हिन्दी)',
+    'es': 'Spanish (Español)'
+}
+
+def get_language_instruction(language: str) -> str:
+    """Get language instruction for prompts."""
+    if language == 'en':
+        return ""
+    lang_name = LANGUAGE_NAMES.get(language, 'English')
+    return f"\n\nIMPORTANT: Respond in {lang_name}. All text fields (summary, explanations, doesNotMean, nextSteps, doctorQuestions) MUST be written in {lang_name}. Keep test names and values in their original form, but translate all explanatory text."
+
 MEDICAL_PROMPT = """You are Doclyst, a friendly medical report assistant. Analyze this medical report and explain it in simple terms.
 
 RULES:
@@ -19,12 +35,33 @@ ANTI-PANIC GUIDANCE (IMPORTANT):
 - Generate "doesNotMean": 2-3 things this result does NOT mean (to prevent panic)
 - Generate "nextSteps": 2-3 safe, actionable steps the patient should take
 - Generate "doctorQuestions": 2-3 questions the patient can ask their doctor
-
+{language_instruction}
 MEDICAL REPORT:
 {report_text}
 
 Respond with ONLY valid JSON (no markdown):
 {{"reportType":"type","overallStatus":"NORMAL/ATTENTION/URGENT","summary":"friendly summary","findings":[{{"name":"test name","value":"result","range":"normal range","explanation":"simple explanation","status":"normal/warning/alert"}}],"doesNotMean":["This does NOT mean...","..."],"nextSteps":["Step 1...","Step 2..."],"doctorQuestions":["Question 1?","Question 2?"]}}"""
+
+COMPARISON_PROMPT = """You are Doclyst, a medical report comparison assistant. Compare these two medical reports (OLD vs NEW) and highlight changes.
+
+RULES:
+1. Identify tests that appear in both reports
+2. For each test, determine if it IMPROVED, WORSENED, or stayed STABLE
+3. Identify any NEW findings in the new report
+4. Explain changes in simple language (5th grade reading level)
+5. Be calm and reassuring - celebrate improvements!
+6. Do NOT diagnose any disease
+7. Do NOT recommend specific treatments
+{language_instruction}
+OLD REPORT:
+{old_report}
+
+NEW REPORT:
+{new_report}
+
+Respond with ONLY valid JSON (no markdown):
+{{"reportType":"type","overallStatus":"NORMAL/ATTENTION/URGENT","summary":"friendly comparison summary","findings":[{{"name":"test name","value":"new value","range":"normal range","explanation":"simple explanation","status":"normal/warning/alert"}}],"comparison":{{"improved":[{{"name":"test","oldValue":"old","newValue":"new","change":"improved","explanation":"what improved"}}],"worsened":[{{"name":"test","oldValue":"old","newValue":"new","change":"worsened","explanation":"what worsened"}}],"stable":[{{"name":"test","oldValue":"old","newValue":"new","change":"stable","explanation":"stayed same"}}],"newFindings":[{{"name":"test","oldValue":"N/A","newValue":"new","change":"new","explanation":"new finding"}}],"comparisonSummary":"overall comparison summary"}},"doesNotMean":["..."],"nextSteps":["..."],"doctorQuestions":["..."]}}"""
+
 
 def call_groq(prompt: str) -> str:
     """PRIMARY: Call Groq API (fast, free)."""
@@ -58,6 +95,7 @@ def call_groq(prompt: str) -> str:
         print(f"[LLM] Groq exception: {e}")
     return ""
 
+
 def call_ernie(prompt: str) -> str:
     """FALLBACK: Call ERNIE via AI Studio API (sponsor)."""
     api_key = Config.ERNIE_ACCESS_TOKEN
@@ -89,6 +127,7 @@ def call_ernie(prompt: str) -> str:
         print(f"[LLM] ERNIE exception: {e}")
     return ""
 
+
 def parse_json_response(text: str) -> dict:
     """Parse JSON from LLM response."""
     if not text:
@@ -110,11 +149,16 @@ def parse_json_response(text: str) -> dict:
         print(f"[JSON] Parse error: {e}")
     return {}
 
-def analyze_medical_report(report_text: str) -> Dict[str, Any]:
+
+def analyze_medical_report(report_text: str, language: str = 'en') -> Dict[str, Any]:
     """Analyze medical report using LLM."""
     
-    print(f"[ANALYSIS] Processing {len(report_text)} chars...")
-    prompt = MEDICAL_PROMPT.format(report_text=report_text[:8000])
+    print(f"[ANALYSIS] Processing {len(report_text)} chars in {language}...")
+    lang_instruction = get_language_instruction(language)
+    prompt = MEDICAL_PROMPT.format(
+        report_text=report_text[:8000],
+        language_instruction=lang_instruction
+    )
     
     # Primary: Groq
     response = call_groq(prompt)
@@ -132,7 +176,7 @@ def analyze_medical_report(report_text: str) -> Dict[str, Any]:
             print(f"[LLM] Analysis complete: {result.get('reportType')}")
             return result
     
-    # Last resort: basic fallback
+    # Last resort: basic fallback (in English)
     print("[LLM] All LLMs failed, using basic fallback")
     return {
         "reportType": "Medical Report",
@@ -163,34 +207,15 @@ def analyze_medical_report(report_text: str) -> Dict[str, Any]:
     }
 
 
-COMPARISON_PROMPT = """You are Doclyst, a medical report comparison assistant. Compare these two medical reports (OLD vs NEW) and highlight changes.
-
-RULES:
-1. Identify tests that appear in both reports
-2. For each test, determine if it IMPROVED, WORSENED, or stayed STABLE
-3. Identify any NEW findings in the new report
-4. Explain changes in simple language (5th grade reading level)
-5. Be calm and reassuring - celebrate improvements!
-6. Do NOT diagnose any disease
-7. Do NOT recommend specific treatments
-
-OLD REPORT:
-{old_report}
-
-NEW REPORT:
-{new_report}
-
-Respond with ONLY valid JSON (no markdown):
-{{"reportType":"type","overallStatus":"NORMAL/ATTENTION/URGENT","summary":"friendly comparison summary","findings":[{{"name":"test name","value":"new value","range":"normal range","explanation":"simple explanation","status":"normal/warning/alert"}}],"comparison":{{"improved":[{{"name":"test","oldValue":"old","newValue":"new","change":"improved","explanation":"what improved"}}],"worsened":[{{"name":"test","oldValue":"old","newValue":"new","change":"worsened","explanation":"what worsened"}}],"stable":[{{"name":"test","oldValue":"old","newValue":"new","change":"stable","explanation":"stayed same"}}],"newFindings":[{{"name":"test","oldValue":"N/A","newValue":"new","change":"new","explanation":"new finding"}}],"comparisonSummary":"overall comparison summary"}},"doesNotMean":["..."],"nextSteps":["..."],"doctorQuestions":["..."]}}"""
-
-
-def compare_medical_reports(old_report: str, new_report: str) -> Dict[str, Any]:
+def compare_medical_reports(old_report: str, new_report: str, language: str = 'en') -> Dict[str, Any]:
     """Compare two medical reports using LLM."""
     
-    print(f"[COMPARISON] Old: {len(old_report)} chars, New: {len(new_report)} chars")
+    print(f"[COMPARISON] Old: {len(old_report)} chars, New: {len(new_report)} chars, Lang: {language}")
+    lang_instruction = get_language_instruction(language)
     prompt = COMPARISON_PROMPT.format(
         old_report=old_report[:4000],
-        new_report=new_report[:4000]
+        new_report=new_report[:4000],
+        language_instruction=lang_instruction
     )
     
     # Primary: Groq

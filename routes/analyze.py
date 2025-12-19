@@ -78,8 +78,11 @@ def analyze_report():
                 'message': "We couldn't read any text from the uploaded files. Please try clearer images."
             }), 400
         
+        # Get language preference
+        language = request.form.get('language', 'en')
+        
         # Analyze combined text
-        result = analyze_medical_report(combined_text)
+        result = analyze_medical_report(combined_text, language)
         
         # Return structured response with anti-panic content
         return jsonify({
@@ -179,8 +182,11 @@ def compare_reports():
                 'message': "Couldn't read text from one or both reports."
             }), 400
         
+        # Get language preference
+        language = request.form.get('language', 'en')
+        
         # Compare reports
-        result = compare_medical_reports(old_combined, new_combined)
+        result = compare_medical_reports(old_combined, new_combined, language)
         
         return jsonify({
             'overallStatus': result.get('overallStatus', 'ATTENTION'),
