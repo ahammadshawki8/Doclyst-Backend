@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from config import Config
 from utils import allowed_file, save_temp_file, cleanup_file, get_file_extension
 from services.ocr_service import process_file
-from services.ernie_service import analyze_medical_report
+from services.ernie_service import analyze_medical_report, compare_medical_reports
 
 analyze_bp = Blueprint('analyze', __name__)
 
@@ -112,6 +112,99 @@ def analyze_report():
         # Cleanup all temp files
         for filepath in filepaths:
             cleanup_file(filepath)
+
+@analyze_bp.route('/compare', methods=['POST'])
+def compare_reports():
+    """
+    Compare two medical reports (old vs new).
+    
+    Accepts: multipart/form-data with 'old_file' and 'new_file' fields
+    Returns: JSON with comparison results
+    """
+    old_files = request.files.getlist('old_file')
+    new_files = request.files.getlist('new_file')
+    
+    if not old_files or not new_files:
+        return jsonify({
+            'error': 'Missing files',
+            'message': 'Please upload both old and new reports.'
+        }), 400
+    
+    old_files = [f for f in old_files if f.filename != '']
+    new_files = [f for f in new_files if f.filename != '']
+    
+    if not old_files or not new_files:
+        return jsonify({
+            'error': 'Missing files',
+            'message': 'Please upload both old and new reports.'
+        }), 400
+    
+    # Validate file types
+    for file in old_files + new_files:
+        if not allowed_file(file.filename):
+            return jsonify({
+                'error': 'Invalid file type',
+                'message': f'File "{file.filename}" is not supported.'
+            }), 400
+    
+    filepaths = []
+    
+    try:
+        # Process old report files
+        old_texts = []
+        for file in old_files:
+            filepath = save_temp_file(file)
+            filepaths.append(filepath)
+            file_ext = get_file_extension(file.filename)
+            text = process_file(filepath, file_ext)
+            if text and len(text.strip()) > 10:
+                old_texts.append(text)
+        
+        # Process new report files
+        new_texts = []
+        for file in new_files:
+            filepath = save_temp_file(file)
+            filepaths.append(filepath)
+            file_ext = get_file_extension(file.filename)
+            text = process_file(filepath, file_ext)
+            if text and len(text.strip()) > 10:
+                new_texts.append(text)
+        
+        old_combined = "\n\n".join(old_texts)
+        new_combined = "\n\n".join(new_texts)
+        
+        if not old_combined or not new_combined:
+            return jsonify({
+                'error': 'No text found',
+                'message': "Couldn't read text from one or both reports."
+            }), 400
+        
+        # Compare reports
+        result = compare_medical_reports(old_combined, new_combined)
+        
+        return jsonify({
+            'overallStatus': result.get('overallStatus', 'ATTENTION'),
+            'summary': result.get('summary', 'Reports compared.'),
+            'tests': result.get('findings', []),
+            'disclaimer': Config.DISCLAIMER,
+            'isComparison': True,
+            'comparison': result.get('comparison', {}),
+            'doesNotMean': result.get('doesNotMean', []),
+            'nextSteps': result.get('nextSteps', []),
+            'doctorQuestions': result.get('doctorQuestions', [])
+        }), 200
+    
+    except Exception as e:
+        print(f"[ERROR] {str(e)}")
+        return jsonify({
+            'error': 'Comparison failed',
+            'message': "Couldn't compare the reports. Please try again."
+        }), 500
+    
+    finally:
+        for filepath in filepaths:
+            cleanup_file(filepath)
+
 
 @analyze_bp.route('/health', methods=['GET'])
 def health_check():

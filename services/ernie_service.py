@@ -161,3 +161,81 @@ def analyze_medical_report(report_text: str) -> Dict[str, Any]:
             "Are there lifestyle changes that could help improve these values?"
         ]
     }
+
+
+COMPARISON_PROMPT = """You are Doclyst, a medical report comparison assistant. Compare these two medical reports (OLD vs NEW) and highlight changes.
+
+RULES:
+1. Identify tests that appear in both reports
+2. For each test, determine if it IMPROVED, WORSENED, or stayed STABLE
+3. Identify any NEW findings in the new report
+4. Explain changes in simple language (5th grade reading level)
+5. Be calm and reassuring - celebrate improvements!
+6. Do NOT diagnose any disease
+7. Do NOT recommend specific treatments
+
+OLD REPORT:
+{old_report}
+
+NEW REPORT:
+{new_report}
+
+Respond with ONLY valid JSON (no markdown):
+{{"reportType":"type","overallStatus":"NORMAL/ATTENTION/URGENT","summary":"friendly comparison summary","findings":[{{"name":"test name","value":"new value","range":"normal range","explanation":"simple explanation","status":"normal/warning/alert"}}],"comparison":{{"improved":[{{"name":"test","oldValue":"old","newValue":"new","change":"improved","explanation":"what improved"}}],"worsened":[{{"name":"test","oldValue":"old","newValue":"new","change":"worsened","explanation":"what worsened"}}],"stable":[{{"name":"test","oldValue":"old","newValue":"new","change":"stable","explanation":"stayed same"}}],"newFindings":[{{"name":"test","oldValue":"N/A","newValue":"new","change":"new","explanation":"new finding"}}],"comparisonSummary":"overall comparison summary"}},"doesNotMean":["..."],"nextSteps":["..."],"doctorQuestions":["..."]}}"""
+
+
+def compare_medical_reports(old_report: str, new_report: str) -> Dict[str, Any]:
+    """Compare two medical reports using LLM."""
+    
+    print(f"[COMPARISON] Old: {len(old_report)} chars, New: {len(new_report)} chars")
+    prompt = COMPARISON_PROMPT.format(
+        old_report=old_report[:4000],
+        new_report=new_report[:4000]
+    )
+    
+    # Primary: Groq
+    response = call_groq(prompt)
+    if response:
+        result = parse_json_response(response)
+        if result and result.get("comparison"):
+            result["isComparison"] = True
+            print("[LLM] Comparison complete")
+            return result
+    
+    # Fallback: ERNIE (sponsor)
+    response = call_ernie(prompt)
+    if response:
+        result = parse_json_response(response)
+        if result and result.get("comparison"):
+            result["isComparison"] = True
+            print("[LLM] Comparison complete")
+            return result
+    
+    # Fallback
+    print("[LLM] Comparison failed, using fallback")
+    return {
+        "reportType": "Medical Report Comparison",
+        "overallStatus": "ATTENTION",
+        "summary": "Both reports have been received. Please consult your doctor for detailed comparison.",
+        "findings": [],
+        "isComparison": True,
+        "comparison": {
+            "improved": [],
+            "worsened": [],
+            "stable": [],
+            "newFindings": [],
+            "comparisonSummary": "Unable to automatically compare. Please review with your doctor."
+        },
+        "doesNotMean": [
+            "Changes don't always indicate problems",
+            "Some variation between tests is normal"
+        ],
+        "nextSteps": [
+            "Discuss both reports with your doctor",
+            "Ask about any significant changes"
+        ],
+        "doctorQuestions": [
+            "How do these results compare overall?",
+            "Are any changes concerning?"
+        ]
+    }
