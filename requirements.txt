@@ -1,0 +1,13 @@
+# Flask
+flask>=3.0.0
+flask-cors>=4.0.0
+python-dotenv>=1.0.0
+
+# PaddleOCR Gradio Client
+gradio_client>=1.0.0
+
+# HTTP Requests
+requests>=2.31.0
+
+# Production server
+gunicorn>=21.0.0
