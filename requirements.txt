@@ -9,5 +9,8 @@ gradio_client>=1.0.0
 # HTTP Requests
 requests>=2.31.0
 
+# Text-to-Speech
+gTTS>=2.4.0
+
 # Production server
 gunicorn>=21.0.0

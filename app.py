@@ -3,6 +3,7 @@ from flask import Flask
 from flask_cors import CORS
 from config import Config
 from routes import analyze_bp
+from routes.tts import tts_bp
 
 def create_app():
     """Create and configure Flask application."""
@@ -20,6 +21,7 @@ def create_app():
     
     # Register blueprints
     app.register_blueprint(analyze_bp)
+    app.register_blueprint(tts_bp)
     
     # Ensure temp upload folder exists
     os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
