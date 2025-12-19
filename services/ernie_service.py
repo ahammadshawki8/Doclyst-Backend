@@ -10,16 +10,21 @@ RULES:
 2. Extract ALL test results with their values and normal ranges
 3. For each test, determine if it's normal, low, or high
 4. Explain each finding in simple language (5th grade reading level)
-5. Be calm and reassuring
+5. Be calm and reassuring - PREVENT PANIC
 6. Do NOT diagnose any disease
 7. Do NOT recommend specific treatments
 8. Suggest consulting a doctor for abnormal values
+
+ANTI-PANIC GUIDANCE (IMPORTANT):
+- Generate "doesNotMean": 2-3 things this result does NOT mean (to prevent panic)
+- Generate "nextSteps": 2-3 safe, actionable steps the patient should take
+- Generate "doctorQuestions": 2-3 questions the patient can ask their doctor
 
 MEDICAL REPORT:
 {report_text}
 
 Respond with ONLY valid JSON (no markdown):
-{{"reportType":"type","overallStatus":"NORMAL/ATTENTION/URGENT","summary":"friendly summary","findings":[{{"name":"test name","value":"result","range":"normal range","explanation":"simple explanation","status":"normal/warning/alert"}}]}}"""
+{{"reportType":"type","overallStatus":"NORMAL/ATTENTION/URGENT","summary":"friendly summary","findings":[{{"name":"test name","value":"result","range":"normal range","explanation":"simple explanation","status":"normal/warning/alert"}}],"doesNotMean":["This does NOT mean...","..."],"nextSteps":["Step 1...","Step 2..."],"doctorQuestions":["Question 1?","Question 2?"]}}"""
 
 def call_groq(prompt: str) -> str:
     """PRIMARY: Call Groq API (fast, free)."""
@@ -139,5 +144,20 @@ def analyze_medical_report(report_text: str) -> Dict[str, Any]:
             "range": "N/A",
             "explanation": "The report was processed but requires professional review.",
             "status": "warning"
-        }]
+        }],
+        "doesNotMean": [
+            "This does NOT mean you have a confirmed disease",
+            "Abnormal values don't always indicate serious problems",
+            "Many factors can temporarily affect test results"
+        ],
+        "nextSteps": [
+            "Schedule a follow-up with your doctor to discuss results",
+            "Keep this report for your medical records",
+            "Note any symptoms you've been experiencing to share with your doctor"
+        ],
+        "doctorQuestions": [
+            "What do these results mean for my overall health?",
+            "Should I repeat any tests or do additional testing?",
+            "Are there lifestyle changes that could help improve these values?"
+        ]
     }

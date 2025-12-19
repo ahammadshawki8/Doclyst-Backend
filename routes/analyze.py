@@ -81,12 +81,24 @@ def analyze_report():
         # Analyze combined text
         result = analyze_medical_report(combined_text)
         
-        # Return structured response
+        # Return structured response with anti-panic content
         return jsonify({
             'overallStatus': result.get('overallStatus', 'ATTENTION'),
             'summary': result.get('summary', 'Your medical report has been reviewed.'),
             'tests': result.get('findings', []),
-            'disclaimer': Config.DISCLAIMER
+            'disclaimer': Config.DISCLAIMER,
+            'doesNotMean': result.get('doesNotMean', [
+                "This does NOT mean you have a confirmed disease",
+                "Abnormal values don't always indicate serious problems"
+            ]),
+            'nextSteps': result.get('nextSteps', [
+                "Schedule a follow-up with your doctor",
+                "Keep this report for your records"
+            ]),
+            'doctorQuestions': result.get('doctorQuestions', [
+                "What do these results mean for my health?",
+                "Should I do any follow-up tests?"
+            ])
         }), 200
     
     except Exception as e:
