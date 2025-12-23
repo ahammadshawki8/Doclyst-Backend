@@ -3,6 +3,9 @@ import requests
 from typing import Dict, Any
 from config import Config
 
+# Timeout for primary LLM (20 seconds)
+PRIMARY_TIMEOUT = 20
+
 # Language configurations
 LANGUAGE_NAMES = {
     'en': 'English',
@@ -63,11 +66,45 @@ Respond with ONLY valid JSON (no markdown):
 {{"reportType":"type","overallStatus":"NORMAL/ATTENTION/URGENT","summary":"friendly comparison summary","findings":[{{"name":"test name","value":"new value","range":"normal range","explanation":"simple explanation","status":"normal/warning/alert"}}],"comparison":{{"improved":[{{"name":"test","oldValue":"old","newValue":"new","change":"improved","explanation":"what improved"}}],"worsened":[{{"name":"test","oldValue":"old","newValue":"new","change":"worsened","explanation":"what worsened"}}],"stable":[{{"name":"test","oldValue":"old","newValue":"new","change":"stable","explanation":"stayed same"}}],"newFindings":[{{"name":"test","oldValue":"N/A","newValue":"new","change":"new","explanation":"new finding"}}],"comparisonSummary":"overall comparison summary"}},"doesNotMean":["..."],"nextSteps":["..."],"doctorQuestions":["..."]}}"""
 
 
+def call_ernie(prompt: str) -> str:
+    """PRIMARY: Call ERNIE via AI Studio API (sponsor)."""
+    api_key = Config.ERNIE_ACCESS_TOKEN
+    if not api_key:
+        print("[LLM] No ERNIE_ACCESS_TOKEN configured")
+        return ""
+    
+    url = "https://aistudio.baidu.com/llm/lmapi/v3/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "ernie-4.5-8k",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3
+    }
+    
+    try:
+        print("[LLM] Using ERNIE (primary - sponsor)...")
+        response = requests.post(url, headers=headers, json=payload, timeout=PRIMARY_TIMEOUT)
+        if response.ok:
+            text = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            if text:
+                print(f"[LLM] ERNIE success: {len(text)} chars")
+                return text
+        print(f"[LLM] ERNIE error: {response.status_code} - {response.text[:200]}")
+    except requests.exceptions.Timeout:
+        print(f"[LLM] ERNIE timeout after {PRIMARY_TIMEOUT}s")
+    except Exception as e:
+        print(f"[LLM] ERNIE exception: {e}")
+    return ""
+
+
 def call_groq(prompt: str) -> str:
-    """PRIMARY: Call Groq API (fast, free)."""
+    """FALLBACK: Call Groq API."""
     api_key = Config.GROQ_API_KEY
     if not api_key:
-        print("[LLM] No GROQ_API_KEY")
+        print("[LLM] No GROQ_API_KEY configured")
         return ""
     
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -83,7 +120,7 @@ def call_groq(prompt: str) -> str:
     }
     
     try:
-        print("[LLM] Using Groq (primary)...")
+        print("[LLM] Using Groq (fallback)...")
         response = requests.post(url, headers=headers, json=payload, timeout=60)
         if response.ok:
             text = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -93,38 +130,6 @@ def call_groq(prompt: str) -> str:
         print(f"[LLM] Groq error: {response.status_code} - {response.text[:200]}")
     except Exception as e:
         print(f"[LLM] Groq exception: {e}")
-    return ""
-
-
-def call_ernie(prompt: str) -> str:
-    """FALLBACK: Call ERNIE via AI Studio API (sponsor)."""
-    api_key = Config.ERNIE_ACCESS_TOKEN
-    if not api_key:
-        print("[LLM] No ERNIE_ACCESS_TOKEN")
-        return ""
-    
-    url = "https://aistudio.baidu.com/llm/lmapi/v3/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "ernie-4.5-8k",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3
-    }
-    
-    try:
-        print("[LLM] Using ERNIE (sponsor fallback)...")
-        response = requests.post(url, headers=headers, json=payload, timeout=120)
-        if response.ok:
-            text = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-            if text:
-                print(f"[LLM] ERNIE success: {len(text)} chars")
-                return text
-        print(f"[LLM] ERNIE error: {response.status_code}")
-    except Exception as e:
-        print(f"[LLM] ERNIE exception: {e}")
     return ""
 
 
@@ -151,7 +156,7 @@ def parse_json_response(text: str) -> dict:
 
 
 def analyze_medical_report(report_text: str, language: str = 'en') -> Dict[str, Any]:
-    """Analyze medical report using LLM."""
+    """Analyze medical report using ERNIE (primary) with Groq fallback."""
     
     print(f"[ANALYSIS] Processing {len(report_text)} chars in {language}...")
     lang_instruction = get_language_instruction(language)
@@ -160,15 +165,7 @@ def analyze_medical_report(report_text: str, language: str = 'en') -> Dict[str, 
         language_instruction=lang_instruction
     )
     
-    # Primary: Groq
-    response = call_groq(prompt)
-    if response:
-        result = parse_json_response(response)
-        if result and result.get("findings"):
-            print(f"[LLM] Analysis complete: {result.get('reportType')}")
-            return result
-    
-    # Fallback: ERNIE (sponsor)
+    # Primary: ERNIE (sponsor) - wait up to 20 seconds
     response = call_ernie(prompt)
     if response:
         result = parse_json_response(response)
@@ -176,7 +173,16 @@ def analyze_medical_report(report_text: str, language: str = 'en') -> Dict[str, 
             print(f"[LLM] Analysis complete: {result.get('reportType')}")
             return result
     
-    # Last resort: basic fallback (in English)
+    # Fallback: Groq
+    print("[LLM] ERNIE failed, trying Groq fallback...")
+    response = call_groq(prompt)
+    if response:
+        result = parse_json_response(response)
+        if result and result.get("findings"):
+            print(f"[LLM] Analysis complete: {result.get('reportType')}")
+            return result
+    
+    # Last resort: basic fallback
     print("[LLM] All LLMs failed, using basic fallback")
     return {
         "reportType": "Medical Report",
@@ -208,7 +214,7 @@ def analyze_medical_report(report_text: str, language: str = 'en') -> Dict[str, 
 
 
 def compare_medical_reports(old_report: str, new_report: str, language: str = 'en') -> Dict[str, Any]:
-    """Compare two medical reports using LLM."""
+    """Compare two medical reports using ERNIE (primary) with Groq fallback."""
     
     print(f"[COMPARISON] Old: {len(old_report)} chars, New: {len(new_report)} chars, Lang: {language}")
     lang_instruction = get_language_instruction(language)
@@ -218,8 +224,8 @@ def compare_medical_reports(old_report: str, new_report: str, language: str = 'e
         language_instruction=lang_instruction
     )
     
-    # Primary: Groq
-    response = call_groq(prompt)
+    # Primary: ERNIE (sponsor) - wait up to 20 seconds
+    response = call_ernie(prompt)
     if response:
         result = parse_json_response(response)
         if result and result.get("comparison"):
@@ -227,8 +233,9 @@ def compare_medical_reports(old_report: str, new_report: str, language: str = 'e
             print("[LLM] Comparison complete")
             return result
     
-    # Fallback: ERNIE (sponsor)
-    response = call_ernie(prompt)
+    # Fallback: Groq
+    print("[LLM] ERNIE failed, trying Groq fallback...")
+    response = call_groq(prompt)
     if response:
         result = parse_json_response(response)
         if result and result.get("comparison"):

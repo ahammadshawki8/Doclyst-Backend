@@ -7,10 +7,43 @@ from utils.text_cleaner import clean_ocr_text
 # OCR.space free API key
 OCR_SPACE_KEY = "K85553768788957"
 
-def extract_with_ocr_space(image_path: str) -> str:
-    """PRIMARY: OCR using OCR.space (fast, reliable)."""
+# Timeout for primary OCR (20 seconds)
+PRIMARY_TIMEOUT = 20
+
+
+def extract_with_paddleocr(image_path: str) -> str:
+    """PRIMARY: OCR using PaddleOCR Gradio (sponsor)."""
     try:
-        print("[OCR] Using OCR.space (primary)...")
+        from gradio_client import Client, handle_file
+        
+        print("[OCR] Using PaddleOCR (primary - sponsor)...")
+        client = Client("https://app-u613z0mda075e806.aistudio-app.com/")
+        
+        result = client.predict(
+            fp=handle_file(image_path),
+            use_chart=False,
+            use_unwarping=False,
+            use_orientation=False,
+            api_name="/parse_doc_router"
+        )
+        
+        if result and len(result) >= 3:
+            text = clean_ocr_text(result[2])
+            if text and len(text.strip()) > 30:
+                print(f"[OCR] PaddleOCR success: {len(text)} chars")
+                return text
+        print("[OCR] PaddleOCR returned insufficient text")
+        return ""
+        
+    except Exception as e:
+        print(f"[OCR] PaddleOCR error: {e}")
+        return ""
+
+
+def extract_with_ocr_space(image_path: str) -> str:
+    """FALLBACK: OCR using OCR.space."""
+    try:
+        print("[OCR] Using OCR.space (fallback)...")
         
         with open(image_path, 'rb') as f:
             image_data = base64.b64encode(f.read()).decode('utf-8')
@@ -27,7 +60,11 @@ def extract_with_ocr_space(image_path: str) -> str:
             'OCREngine': 2
         }
         
-        response = requests.post("https://api.ocr.space/parse/image", data=payload, timeout=30)
+        response = requests.post(
+            "https://api.ocr.space/parse/image",
+            data=payload,
+            timeout=30
+        )
         
         if response.ok:
             result = response.json()
@@ -44,57 +81,42 @@ def extract_with_ocr_space(image_path: str) -> str:
         print(f"[OCR] OCR.space error: {e}")
         return ""
 
-def extract_with_paddleocr(image_path: str) -> str:
-    """FALLBACK: OCR using PaddleOCR Gradio (sponsor)."""
-    try:
-        from gradio_client import Client, handle_file
-        
-        print("[OCR] Using PaddleOCR (sponsor fallback)...")
-        client = Client("https://app-u613z0mda075e806.aistudio-app.com/")
-        
-        result = client.predict(
-            fp=handle_file(image_path),
-            use_chart=False,
-            use_unwarping=False,
-            use_orientation=False,
-            api_name="/parse_doc_router"
-        )
-        
-        if result and len(result) >= 3:
-            text = clean_ocr_text(result[2])
-            print(f"[OCR] PaddleOCR success: {len(text)} chars")
-            return text
-        return ""
-        
-    except Exception as e:
-        print(f"[OCR] PaddleOCR error: {e}")
-        return ""
 
 def extract_text_from_image(image_path: str) -> str:
-    """Extract text from image."""
+    """Extract text from image using PaddleOCR (primary) with OCR.space fallback."""
     print(f"[OCR] Processing: {os.path.basename(image_path)}")
     start = time.time()
     
-    # Primary: OCR.space
-    text = extract_with_ocr_space(image_path)
-    if text and len(text.strip()) > 30:
-        print(f"[OCR] Done in {time.time()-start:.1f}s")
-        return clean_ocr_text(text)
-    
-    # Fallback: PaddleOCR (sponsor)
+    # Primary: PaddleOCR (sponsor) - wait up to 20 seconds
     text = extract_with_paddleocr(image_path)
     if text and len(text.strip()) > 30:
         print(f"[OCR] Done in {time.time()-start:.1f}s")
         return text
     
+    # Fallback: OCR.space
+    print("[OCR] PaddleOCR failed, trying OCR.space fallback...")
+    text = extract_with_ocr_space(image_path)
+    if text and len(text.strip()) > 30:
+        print(f"[OCR] Done in {time.time()-start:.1f}s")
+        return clean_ocr_text(text)
+    
     print("[OCR] All OCR methods failed")
     return ""
 
+
 def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extract text from PDF."""
+    """Extract text from PDF using PaddleOCR (primary) with OCR.space fallback."""
     print(f"[OCR] Processing PDF: {os.path.basename(pdf_path)}")
+    start = time.time()
     
-    # Primary: OCR.space (supports PDF)
+    # Primary: PaddleOCR (sponsor)
+    text = extract_with_paddleocr(pdf_path)
+    if text and len(text.strip()) > 30:
+        print(f"[OCR] Done in {time.time()-start:.1f}s")
+        return text
+    
+    # Fallback: OCR.space (supports PDF)
+    print("[OCR] PaddleOCR failed, trying OCR.space fallback...")
     try:
         with open(pdf_path, 'rb') as f:
             response = requests.post(
@@ -113,8 +135,9 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     except Exception as e:
         print(f"[OCR] OCR.space PDF error: {e}")
     
-    # Fallback: PaddleOCR (sponsor)
-    return extract_with_paddleocr(pdf_path)
+    print("[OCR] All OCR methods failed for PDF")
+    return ""
+
 
 def process_file(filepath: str, file_extension: str) -> str:
     """Process file and return extracted text."""
