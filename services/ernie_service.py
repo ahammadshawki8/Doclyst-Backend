@@ -1,6 +1,7 @@
 import json
+import base64
 import requests
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from config import Config
 
 # Timeout for primary LLM (20 seconds)
@@ -45,6 +46,36 @@ MEDICAL REPORT:
 Respond with ONLY valid JSON (no markdown):
 {{"reportType":"type","overallStatus":"NORMAL/ATTENTION/URGENT","summary":"friendly summary","findings":[{{"name":"test name","value":"result","range":"normal range","explanation":"simple explanation","status":"normal/warning/alert"}}],"doesNotMean":["This does NOT mean...","..."],"nextSteps":["Step 1...","Step 2..."],"doctorQuestions":["Question 1?","Question 2?"]}}"""
 
+# Vision prompt for ECG/X-ray images
+VISION_PROMPT = """You are Doclyst, a friendly medical image assistant. Analyze this medical image and describe what you observe.
+
+IMPORTANT RULES:
+1. Identify the type of medical image (ECG, X-ray, CT scan, ultrasound, etc.)
+2. Describe observable patterns, shapes, and features you can see
+3. Use simple language (5th grade reading level)
+4. Be calm and reassuring - PREVENT PANIC
+5. Do NOT diagnose any disease or condition
+6. Do NOT make definitive medical conclusions
+7. Always recommend consulting a doctor for proper interpretation
+
+For ECG images, describe:
+- Heart rhythm pattern (regular/irregular)
+- Wave patterns you observe
+- Any notable features
+
+For X-ray/imaging, describe:
+- Body part shown
+- General appearance
+- Any visible patterns or areas of interest
+
+ANTI-PANIC GUIDANCE:
+- Generate "doesNotMean": 2-3 things this image does NOT indicate (to prevent panic)
+- Generate "nextSteps": 2-3 safe steps the patient should take
+- Generate "doctorQuestions": 2-3 questions to ask the doctor
+{language_instruction}
+Respond with ONLY valid JSON (no markdown):
+{{"reportType":"ECG/X-ray/etc","overallStatus":"NORMAL/ATTENTION/URGENT","summary":"friendly description of what you observe","findings":[{{"name":"observation name","value":"what you see","range":"typical appearance","explanation":"simple explanation","status":"normal/warning/alert"}}],"doesNotMean":["This does NOT mean..."],"nextSteps":["Step 1..."],"doctorQuestions":["Question 1?"]}}"""
+
 COMPARISON_PROMPT = """You are Doclyst, a medical report comparison assistant. Compare these two medical reports (OLD vs NEW) and highlight changes.
 
 RULES:
@@ -64,6 +95,25 @@ NEW REPORT:
 
 Respond with ONLY valid JSON (no markdown):
 {{"reportType":"type","overallStatus":"NORMAL/ATTENTION/URGENT","summary":"friendly comparison summary","findings":[{{"name":"test name","value":"new value","range":"normal range","explanation":"simple explanation","status":"normal/warning/alert"}}],"comparison":{{"improved":[{{"name":"test","oldValue":"old","newValue":"new","change":"improved","explanation":"what improved"}}],"worsened":[{{"name":"test","oldValue":"old","newValue":"new","change":"worsened","explanation":"what worsened"}}],"stable":[{{"name":"test","oldValue":"old","newValue":"new","change":"stable","explanation":"stayed same"}}],"newFindings":[{{"name":"test","oldValue":"N/A","newValue":"new","change":"new","explanation":"new finding"}}],"comparisonSummary":"overall comparison summary"}},"doesNotMean":["..."],"nextSteps":["..."],"doctorQuestions":["..."]}}"""
+
+
+def encode_image_to_base64(image_path: str) -> str:
+    """Encode image file to base64 string."""
+    with open(image_path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+
+def get_image_mime_type(image_path: str) -> str:
+    """Get MIME type from image path."""
+    ext = image_path.lower().split('.')[-1]
+    mime_types = {
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'gif': 'image/gif',
+        'webp': 'image/webp'
+    }
+    return mime_types.get(ext, 'image/jpeg')
 
 
 def call_ernie(prompt: str) -> str:
@@ -100,6 +150,49 @@ def call_ernie(prompt: str) -> str:
     return ""
 
 
+def call_ernie_vision(prompt: str, image_path: str) -> str:
+    """Call ERNIE Vision model for image analysis (sponsor)."""
+    api_key = Config.ERNIE_ACCESS_TOKEN
+    if not api_key:
+        print("[VISION] No ERNIE_ACCESS_TOKEN configured")
+        return ""
+    
+    url = "https://aistudio.baidu.com/llm/lmapi/v3/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    # Encode image
+    image_base64 = encode_image_to_base64(image_path)
+    mime_type = get_image_mime_type(image_path)
+    
+    payload = {
+        "model": "ernie-4.5-8k",  # ERNIE supports vision
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}}
+            ]
+        }],
+        "temperature": 0.3
+    }
+    
+    try:
+        print("[VISION] Using ERNIE Vision (primary - sponsor)...")
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        if response.ok:
+            text = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            if text:
+                print(f"[VISION] ERNIE Vision success: {len(text)} chars")
+                return text
+        print(f"[VISION] ERNIE Vision error: {response.status_code} - {response.text[:200]}")
+    except Exception as e:
+        print(f"[VISION] ERNIE Vision exception: {e}")
+    return ""
+
+
 def call_groq(prompt: str) -> str:
     """FALLBACK: Call Groq API."""
     api_key = Config.GROQ_API_KEY
@@ -133,6 +226,50 @@ def call_groq(prompt: str) -> str:
     return ""
 
 
+def call_groq_vision(prompt: str, image_path: str) -> str:
+    """FALLBACK: Call Groq Vision API for image analysis."""
+    api_key = Config.GROQ_API_KEY
+    if not api_key:
+        print("[VISION] No GROQ_API_KEY configured")
+        return ""
+    
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    # Encode image
+    image_base64 = encode_image_to_base64(image_path)
+    mime_type = get_image_mime_type(image_path)
+    
+    payload = {
+        "model": "llama-3.2-90b-vision-preview",  # Groq vision model
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}}
+            ]
+        }],
+        "temperature": 0.3,
+        "max_tokens": 4096
+    }
+    
+    try:
+        print("[VISION] Using Groq Vision (fallback)...")
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        if response.ok:
+            text = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            if text:
+                print(f"[VISION] Groq Vision success: {len(text)} chars")
+                return text
+        print(f"[VISION] Groq Vision error: {response.status_code} - {response.text[:200]}")
+    except Exception as e:
+        print(f"[VISION] Groq Vision exception: {e}")
+    return ""
+
+
 def parse_json_response(text: str) -> dict:
     """Parse JSON from LLM response."""
     if not text:
@@ -155,8 +292,72 @@ def parse_json_response(text: str) -> dict:
     return {}
 
 
-def analyze_medical_report(report_text: str, language: str = 'en') -> Dict[str, Any]:
-    """Analyze medical report using ERNIE (primary) with Groq fallback."""
+def analyze_medical_image(image_path: str, language: str = 'en') -> Dict[str, Any]:
+    """Analyze medical image (ECG, X-ray, etc.) using vision models."""
+    
+    print(f"[VISION] Analyzing image: {image_path}")
+    lang_instruction = get_language_instruction(language)
+    prompt = VISION_PROMPT.format(language_instruction=lang_instruction)
+    
+    # Primary: ERNIE Vision (sponsor)
+    response = call_ernie_vision(prompt, image_path)
+    if response:
+        result = parse_json_response(response)
+        if result and result.get("findings"):
+            print(f"[VISION] Analysis complete: {result.get('reportType')}")
+            return result
+    
+    # Fallback: Groq Vision
+    print("[VISION] ERNIE Vision failed, trying Groq Vision fallback...")
+    response = call_groq_vision(prompt, image_path)
+    if response:
+        result = parse_json_response(response)
+        if result and result.get("findings"):
+            print(f"[VISION] Analysis complete: {result.get('reportType')}")
+            return result
+    
+    # Last resort fallback
+    print("[VISION] All vision models failed, using fallback")
+    return {
+        "reportType": "Medical Image",
+        "overallStatus": "ATTENTION",
+        "summary": "This appears to be a medical image (possibly ECG or X-ray). Please consult your doctor for proper interpretation of this image.",
+        "findings": [{
+            "name": "Image Analysis",
+            "value": "Requires professional review",
+            "range": "N/A",
+            "explanation": "Medical images like ECGs and X-rays require trained professionals to interpret accurately. Please share this image with your doctor.",
+            "status": "warning"
+        }],
+        "doesNotMean": [
+            "This does NOT mean there is definitely something wrong",
+            "Many medical images show normal variations",
+            "Only a trained doctor can properly interpret this image"
+        ],
+        "nextSteps": [
+            "Share this image with your doctor",
+            "Ask your doctor to explain what they see",
+            "Keep this image for your medical records"
+        ],
+        "doctorQuestions": [
+            "What does this image show?",
+            "Is everything normal in this image?",
+            "Do I need any follow-up tests?"
+        ]
+    }
+
+
+def analyze_medical_report(report_text: str, language: str = 'en', image_paths: Optional[list] = None) -> Dict[str, Any]:
+    """Analyze medical report using ERNIE (primary) with Groq fallback.
+    
+    If report_text is empty/minimal but image_paths provided, uses vision analysis.
+    """
+    
+    # If no text but images provided, use vision analysis
+    if (not report_text or len(report_text.strip()) < 50) and image_paths:
+        print("[ANALYSIS] No text found, using vision analysis for images...")
+        # Analyze first image (typically the main report)
+        return analyze_medical_image(image_paths[0], language)
     
     print(f"[ANALYSIS] Processing {len(report_text)} chars in {language}...")
     lang_instruction = get_language_instruction(language)

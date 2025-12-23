@@ -72,17 +72,24 @@ def analyze_report():
         
         print(f"[OCR] Total extracted: {len(combined_text)} chars from {len(files)} file(s)")
         
-        if not combined_text or len(combined_text.strip()) < 10:
-            return jsonify({
-                'error': 'No text found',
-                'message': "We couldn't read any text from the uploaded files. Please try clearer images."
-            }), 400
-        
         # Get language preference
         language = request.form.get('language', 'en')
         
-        # Analyze combined text
-        result = analyze_medical_report(combined_text, language)
+        # If no text extracted, try vision analysis for images (ECG, X-ray)
+        if not combined_text or len(combined_text.strip()) < 50:
+            # Check if we have image files that might be ECG/X-ray
+            image_paths = [fp for fp in filepaths if fp.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            if image_paths:
+                print("[ANALYZE] No text found, attempting vision analysis for medical images...")
+                result = analyze_medical_report("", language, image_paths=image_paths)
+            else:
+                return jsonify({
+                    'error': 'No text found',
+                    'message': "We couldn't read any text from the uploaded files. Please try clearer images."
+                }), 400
+        else:
+            # Analyze combined text
+            result = analyze_medical_report(combined_text, language)
         
         # Return structured response with anti-panic content
         return jsonify({
