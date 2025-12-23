@@ -131,18 +131,21 @@ def call_ernie(prompt: str) -> str:
     payload = {
         "model": "ernie-4.5-8k",
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3
+        "temperature": 0.3,
+        "stream": False
     }
     
     try:
         print("[LLM] Using ERNIE (primary - sponsor)...")
         response = requests.post(url, headers=headers, json=payload, timeout=PRIMARY_TIMEOUT)
         if response.ok:
-            text = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-            if text:
-                print(f"[LLM] ERNIE success: {len(text)} chars")
-                return text
-        print(f"[LLM] ERNIE error: {response.status_code} - {response.text[:200]}")
+            data = response.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                text = data["choices"][0].get("message", {}).get("content", "")
+                if text:
+                    print(f"[LLM] ERNIE success: {len(text)} chars")
+                    return text
+        print(f"[LLM] ERNIE error: {response.status_code} - {response.text[:300]}")
     except requests.exceptions.Timeout:
         print(f"[LLM] ERNIE timeout after {PRIMARY_TIMEOUT}s")
     except Exception as e:
@@ -168,7 +171,7 @@ def call_ernie_vision(prompt: str, image_path: str) -> str:
     mime_type = get_image_mime_type(image_path)
     
     payload = {
-        "model": "ernie-4.5-8k",  # ERNIE supports vision
+        "model": "ernie-4.5-8k",
         "messages": [{
             "role": "user",
             "content": [
@@ -176,18 +179,21 @@ def call_ernie_vision(prompt: str, image_path: str) -> str:
                 {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_base64}"}}
             ]
         }],
-        "temperature": 0.3
+        "temperature": 0.3,
+        "stream": False
     }
     
     try:
         print("[VISION] Using ERNIE Vision (primary - sponsor)...")
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         if response.ok:
-            text = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-            if text:
-                print(f"[VISION] ERNIE Vision success: {len(text)} chars")
-                return text
-        print(f"[VISION] ERNIE Vision error: {response.status_code} - {response.text[:200]}")
+            data = response.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                text = data["choices"][0].get("message", {}).get("content", "")
+                if text:
+                    print(f"[VISION] ERNIE Vision success: {len(text)} chars")
+                    return text
+        print(f"[VISION] ERNIE Vision error: {response.status_code} - {response.text[:300]}")
     except Exception as e:
         print(f"[VISION] ERNIE Vision exception: {e}")
     return ""
