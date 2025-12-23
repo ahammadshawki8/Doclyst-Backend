@@ -13,11 +13,20 @@ def create_app():
     # Enable CORS for frontend
     CORS(app, resources={
         r"/*": {
-            "origins": ["http://localhost:5173", "http://localhost:3000", "*"],
+            "origins": "*",
             "methods": ["GET", "POST", "OPTIONS"],
-            "allow_headers": ["Content-Type"]
+            "allow_headers": ["Content-Type"],
+            "supports_credentials": False
         }
     })
+    
+    # Ensure CORS headers are always present
+    @app.after_request
+    def after_request(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        return response
     
     # Register blueprints
     app.register_blueprint(analyze_bp)
