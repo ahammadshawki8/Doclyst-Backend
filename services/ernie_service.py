@@ -244,7 +244,7 @@ def call_groq_vision(prompt: str, image_path: str) -> str:
     mime_type = get_image_mime_type(image_path)
     
     payload = {
-        "model": "llama-3.2-90b-vision-preview",  # Groq vision model
+        "model": "llama-3.2-11b-vision-preview",  # Current Groq vision model
         "messages": [{
             "role": "user",
             "content": [
