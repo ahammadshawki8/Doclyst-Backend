@@ -4,8 +4,8 @@ import requests
 from typing import Dict, Any, Optional
 from config import Config
 
-# Timeout for primary LLM (20 seconds)
-PRIMARY_TIMEOUT = 20
+# Timeout for primary LLM (30 seconds)
+PRIMARY_TIMEOUT = 30
 
 # Language configurations
 LANGUAGE_NAMES = {
@@ -129,7 +129,7 @@ def call_ernie(prompt: str) -> str:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "ernie-4.0-turbo-8k",  # Supported model
+        "model": "ernie-4.0-turbo-8k",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.3,
         "stream": False
@@ -137,7 +137,7 @@ def call_ernie(prompt: str) -> str:
     
     try:
         print("[LLM] Using ERNIE (primary - sponsor)...")
-        response = requests.post(url, headers=headers, json=payload, timeout=PRIMARY_TIMEOUT)
+        response = requests.post(url, headers=headers, json=payload, timeout=(10, PRIMARY_TIMEOUT))
         if response.ok:
             data = response.json()
             if "choices" in data and len(data["choices"]) > 0:
@@ -145,9 +145,15 @@ def call_ernie(prompt: str) -> str:
                 if text:
                     print(f"[LLM] ERNIE success: {len(text)} chars")
                     return text
-        print(f"[LLM] ERNIE error: {response.status_code} - {response.text[:300]}")
+            print(f"[LLM] ERNIE returned empty response")
+        else:
+            print(f"[LLM] ERNIE error: {response.status_code} - {response.text[:300]}")
+    except requests.exceptions.ConnectTimeout:
+        print(f"[LLM] ERNIE connection timeout")
+    except requests.exceptions.ReadTimeout:
+        print(f"[LLM] ERNIE read timeout after {PRIMARY_TIMEOUT}s")
     except requests.exceptions.Timeout:
-        print(f"[LLM] ERNIE timeout after {PRIMARY_TIMEOUT}s")
+        print(f"[LLM] ERNIE timeout")
     except Exception as e:
         print(f"[LLM] ERNIE exception: {e}")
     return ""
