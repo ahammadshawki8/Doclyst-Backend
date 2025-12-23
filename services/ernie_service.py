@@ -4,8 +4,9 @@ import requests
 from typing import Dict, Any, Optional
 from config import Config
 
-# Timeout for primary LLM (30 seconds)
-PRIMARY_TIMEOUT = 30
+# Timeout for LLM calls
+PRIMARY_TIMEOUT = 15  # Short timeout for primary
+FALLBACK_TIMEOUT = 30  # Longer timeout for fallback
 
 # Language configurations
 LANGUAGE_NAMES = {
@@ -117,7 +118,7 @@ def get_image_mime_type(image_path: str) -> str:
 
 
 def call_ernie(prompt: str) -> str:
-    """PRIMARY: Call ERNIE via AI Studio API (sponsor)."""
+    """FALLBACK: Call ERNIE via AI Studio API (sponsor)."""
     api_key = Config.ERNIE_ACCESS_TOKEN
     if not api_key:
         print("[LLM] No ERNIE_ACCESS_TOKEN configured")
@@ -136,8 +137,8 @@ def call_ernie(prompt: str) -> str:
     }
     
     try:
-        print("[LLM] Using ERNIE (primary - sponsor)...")
-        response = requests.post(url, headers=headers, json=payload, timeout=(10, PRIMARY_TIMEOUT))
+        print("[LLM] Using ERNIE (sponsor fallback)...")
+        response = requests.post(url, headers=headers, json=payload, timeout=(5, FALLBACK_TIMEOUT))
         if response.ok:
             data = response.json()
             if "choices" in data and len(data["choices"]) > 0:
@@ -151,7 +152,7 @@ def call_ernie(prompt: str) -> str:
     except requests.exceptions.ConnectTimeout:
         print(f"[LLM] ERNIE connection timeout")
     except requests.exceptions.ReadTimeout:
-        print(f"[LLM] ERNIE read timeout after {PRIMARY_TIMEOUT}s")
+        print(f"[LLM] ERNIE read timeout after {FALLBACK_TIMEOUT}s")
     except requests.exceptions.Timeout:
         print(f"[LLM] ERNIE timeout")
     except Exception as e:
@@ -206,7 +207,7 @@ def call_ernie_vision(prompt: str, image_path: str) -> str:
 
 
 def call_groq(prompt: str) -> str:
-    """FALLBACK: Call Groq API."""
+    """PRIMARY: Call Groq API (fast, reliable)."""
     api_key = Config.GROQ_API_KEY
     if not api_key:
         print("[LLM] No GROQ_API_KEY configured")
@@ -225,8 +226,8 @@ def call_groq(prompt: str) -> str:
     }
     
     try:
-        print("[LLM] Using Groq (fallback)...")
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        print("[LLM] Using Groq (primary)...")
+        response = requests.post(url, headers=headers, json=payload, timeout=PRIMARY_TIMEOUT)
         if response.ok:
             text = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
             if text:
@@ -360,7 +361,7 @@ def analyze_medical_image(image_path: str, language: str = 'en') -> Dict[str, An
 
 
 def analyze_medical_report(report_text: str, language: str = 'en', image_paths: Optional[list] = None) -> Dict[str, Any]:
-    """Analyze medical report using ERNIE (primary) with Groq fallback.
+    """Analyze medical report using Groq (primary) with ERNIE fallback.
     
     If report_text is empty/minimal but image_paths provided, uses vision analysis.
     """
@@ -378,17 +379,17 @@ def analyze_medical_report(report_text: str, language: str = 'en', image_paths: 
         language_instruction=lang_instruction
     )
     
-    # Primary: ERNIE (sponsor) - wait up to 20 seconds
-    response = call_ernie(prompt)
+    # Primary: Groq (fast, reliable)
+    response = call_groq(prompt)
     if response:
         result = parse_json_response(response)
         if result and result.get("findings"):
             print(f"[LLM] Analysis complete: {result.get('reportType')}")
             return result
     
-    # Fallback: Groq
-    print("[LLM] ERNIE failed, trying Groq fallback...")
-    response = call_groq(prompt)
+    # Fallback: ERNIE (sponsor)
+    print("[LLM] Groq failed, trying ERNIE fallback...")
+    response = call_ernie(prompt)
     if response:
         result = parse_json_response(response)
         if result and result.get("findings"):
@@ -427,7 +428,7 @@ def analyze_medical_report(report_text: str, language: str = 'en', image_paths: 
 
 
 def compare_medical_reports(old_report: str, new_report: str, language: str = 'en') -> Dict[str, Any]:
-    """Compare two medical reports using ERNIE (primary) with Groq fallback."""
+    """Compare two medical reports using Groq (primary) with ERNIE fallback."""
     
     print(f"[COMPARISON] Old: {len(old_report)} chars, New: {len(new_report)} chars, Lang: {language}")
     lang_instruction = get_language_instruction(language)
@@ -437,8 +438,8 @@ def compare_medical_reports(old_report: str, new_report: str, language: str = 'e
         language_instruction=lang_instruction
     )
     
-    # Primary: ERNIE (sponsor) - wait up to 20 seconds
-    response = call_ernie(prompt)
+    # Primary: Groq (fast, reliable)
+    response = call_groq(prompt)
     if response:
         result = parse_json_response(response)
         if result and result.get("comparison"):
@@ -446,9 +447,9 @@ def compare_medical_reports(old_report: str, new_report: str, language: str = 'e
             print("[LLM] Comparison complete")
             return result
     
-    # Fallback: Groq
-    print("[LLM] ERNIE failed, trying Groq fallback...")
-    response = call_groq(prompt)
+    # Fallback: ERNIE (sponsor)
+    print("[LLM] Groq failed, trying ERNIE fallback...")
+    response = call_ernie(prompt)
     if response:
         result = parse_json_response(response)
         if result and result.get("comparison"):
