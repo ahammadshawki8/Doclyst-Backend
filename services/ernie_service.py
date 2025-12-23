@@ -129,7 +129,7 @@ def call_ernie(prompt: str) -> str:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "ernie-4.5-8k",
+        "model": "ernie-4.0-turbo-8k",  # Supported model
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.3,
         "stream": False
@@ -171,7 +171,7 @@ def call_ernie_vision(prompt: str, image_path: str) -> str:
     mime_type = get_image_mime_type(image_path)
     
     payload = {
-        "model": "ernie-4.5-8k",
+        "model": "ernie-4.0-turbo-8k",  # Supported model
         "messages": [{
             "role": "user",
             "content": [
