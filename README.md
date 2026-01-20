@@ -10,21 +10,13 @@ Doclyst Backend processes medical reports (blood tests, X-rays, ECGs) and return
 |-------|--------|
 | Medical report (PDF/PNG/JPG) | Simple explanation + urgency indicator + disclaimer |
 
-## � Porwered By Sponsor Technologies
+## 🛠️ Tech Stack
 
-### 🔤 PaddleOCR (Baidu)
-Our OCR pipeline leverages **PaddleOCR**—Baidu's state-of-the-art optical character recognition system. PaddleOCR provides exceptional accuracy for medical document text extraction, supporting multiple languages and complex document layouts.
-
-- High-precision text extraction from medical reports
-- Robust handling of various document formats
-- Optimized for both printed and handwritten text
-
-### 🧠 ERNIE (Baidu)
-For intelligent medical report analysis, we integrate **ERNIE** (Enhanced Representation through kNowledge IntEgration)—Baidu's advanced large language model. ERNIE powers our explanation engine with:
-
-- Context-aware medical terminology understanding
-- Patient-friendly language generation
-- Safe, non-diagnostic explanations
+- **PaddleOCR** — OCR text extraction
+- **OCR Space** — Alternative OCR service
+- **ERNIE** — Large language model for analysis
+- **Groq** — LLM inference
+- **Flask** — Python web framework
 
 ## 🏗️ Architecture
 
@@ -38,11 +30,11 @@ For intelligent medical report analysis, we integrate **ERNIE** (Enhanced Repres
 └────────┬────────┘
          ▼
 ┌─────────────────┐
-│  🔤 PaddleOCR   │  Text Extraction (Sponsor)
+│  🔤 PaddleOCR   │  Text Extraction
 └────────┬────────┘
          ▼
 ┌─────────────────┐
-│   🧠 ERNIE      │  Medical Explanation (Sponsor)
+│   🧠 ERNIE      │  Medical Explanation
 └────────┬────────┘
          ▼
 ┌─────────────────┐
@@ -87,8 +79,8 @@ cp .env.example .env
 **Environment Variables:**
 | Variable | Description |
 |----------|-------------|
-| `ERNIE_ACCESS_TOKEN` | ERNIE API token (Sponsor) |
-| `GROQ_API_KEY` | Secondary LLM API key |
+| `ERNIE_ACCESS_TOKEN` | ERNIE API token |
+| `GROQ_API_KEY` | Groq LLM API key |
 
 ### Run Server
 
@@ -156,8 +148,8 @@ Doclyst-Backend/
 ├── routes/
 │   └── analyze.py          # API endpoints
 ├── services/
-│   ├── ocr_service.py      # 🔤 PaddleOCR integration
-│   ├── ernie_service.py    # 🧠 ERNIE LLM integration
+│   ├── ocr_service.py      # OCR integration
+│   ├── ernie_service.py    # LLM integration
 │   ├── medical_parser.py   # Data structuring
 │   └── risk_engine.py      # Urgency assessment
 ├── utils/
@@ -216,9 +208,3 @@ curl -X POST http://localhost:5000/analyze \
 ## 📄 License
 
 MIT License
-
----
-
-<p align="center">
-  Built with 🔤 <strong>PaddleOCR</strong> and 🧠 <strong>ERNIE</strong> by Baidu
-</p>
